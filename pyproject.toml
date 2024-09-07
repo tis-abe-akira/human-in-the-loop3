@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "human-in-the-loop"
+version = "0.1.0"
+description = ""
+authors = ["abe.akira"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+langgraph = "^0.2.19"
+langchain-openai = "^0.1.23"
+python-dotenv = "^1.0.1"
+streamlit = "^1.38.0"
+langsmith = "^0.1.116"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
