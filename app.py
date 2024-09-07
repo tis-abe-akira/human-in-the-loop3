@@ -1,154 +1,79 @@
-from pdb import run
-import uu
-import streamlit as st
+from typing import Any
 from uuid import uuid4
 
-import os
-import sys
+import streamlit as st
 from dotenv import load_dotenv
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from json import load
-from typing import TypedDict, Literal, override
-from langgraph.graph import StateGraph, START, END, MessagesState
-from langgraph.checkpoint.memory import MemorySaver
-from langchain_openai import ChatOpenAI
-from langchain_core.tools import tool
-from langchain_core.messages import AIMessage
-# from IPython.display import Image, display
+from agent import HumanInTheLoopAgent
 
 
-@tool
-def weather_search(city: str):
-    """Search for the weather"""
-    print("----")
-    print(f"Searching for: {city}")
-    print("----")
-    return "Sunny!"
+def show_messages(messages: list[Any]) -> None:
+    for message in messages:
+        if isinstance(message, HumanMessage):
+            with st.chat_message(message.type):
+                st.write(message.content)
 
-
-class State(MessagesState):
-    """Simple state."""
-
-
-def call_llm(state):
-    model = ChatOpenAI(model="gpt-4o-mini").bind_tools([weather_search])
-    return {"messages": [model.invoke(state["messages"])]}
-
-
-def human_review_node(state):
-    pass
-
-
-def run_tool(state):
-    new_messages = []
-    tools = {"weather_search": weather_search}
-    tool_calls = state["messages"][-1].tool_calls
-    for tool_call in tool_calls:
-        tool = tools[tool_call["name"]]
-        result = tool.invoke(tool_call["args"])
-        new_messages.append(
-            {
-                "role": "tool",
-                "name": tool_call["name"],
-                "content": result,
-                "tool_call_id": tool_call["id"],
-            }
-        )
-    return {"messages": new_messages}
-
-
-def route_after_llm(state) -> Literal[END, "human_review_node"]:
-    if len(state["messages"][-1].tool_calls) == 0:
-        return END
-    else:
-        return "human_review_node"
-
-
-def route_after_human(state) -> Literal["run_tool", "call_llm"]:
-    if isinstance(state["messages"][-1], AIMessage):
-        return "run_tool"
-    else:
-        return "call_llm"
-
-def create_graph():
-    builder = StateGraph(State)
-    builder.add_node(call_llm)
-    builder.add_node(run_tool)
-    builder.add_node(human_review_node)
-    builder.add_edge(START, "call_llm")
-    builder.add_conditional_edges("call_llm", route_after_llm)
-    builder.add_conditional_edges("human_review_node", route_after_human)
-    builder.add_edge("run_tool", "call_llm")
-
-    # Set up memory
-    memory = MemorySaver()
-
-    # Add
-    return builder.compile(checkpointer=memory, interrupt_before=["human_review_node"])
-
-    # View
-    # display(Image(graph.get_graph().draw_mermaid_png()))
-
-def run_agent(graph, graph_input, thread):
-    for event in graph.stream(graph_input, thread, stream_mode="values"):
-        last_message = event["messages"][-1]
-
-        if isinstance(last_message, AIMessage):
-            if len(last_message.tool_calls) > 0:
-                st.write("Agentがtool_callを希望しています")
-                st.write(last_message)
+        elif isinstance(message, AIMessage):
+            # tool_callの場合はツールの承認を求める旨を表示
+            if len(message.tool_calls) != 0:
+                for tool_call in message.tool_calls:
+                    with st.chat_message(message.type):
+                        st.write("エージェントがツールの承認を求めています")
+                        st.write(f"ツール名: {tool_call['name']}")
+                        st.write(f"引数: {tool_call['args']}")
             else:
-                st.write("AI Response!")
-                st.write(last_message.content)
+                with st.chat_message(message.type):
+                    st.write(message.content)
+
+        elif isinstance(message, ToolMessage):
+            with st.chat_message(message.type):
+                st.write("ツールの実行結果")
+                st.write(message.content)
+
+        else:
+            raise ValueError(f"Unknown message type: {type(message)}")
 
 
-def app():
+def app() -> None:
     load_dotenv(override=True)
-    st.title("LangGraphでHuman-in-the-loopを実現する")
+
+    st.title("LangGraphでのHuman-in-the-loopの実装")
+
+    # st.session_stateにagentを保存
+    if "agent" not in st.session_state:
+        st.session_state.agent = HumanInTheLoopAgent()
+    agent = st.session_state.agent
+
+    # グラフを表示
+    with st.sidebar:
+        st.image(agent.mermaid_png())
 
     # st.session_stateにthread_idを保存
     if "thread_id" not in st.session_state:
-        thread_id = uuid4().hex
-        st.session_state.thread_id = thread_id
+        st.session_state.thread_id = uuid4().hex
     thread_id = st.session_state.thread_id
+    st.write(f"thread_id: {thread_id}")
 
-    graph = create_graph()
+    # ユーザーの指示を受け付ける
+    human_message = st.chat_input()
+    if human_message:
+        with st.spinner():
+            agent.handle_human_message(human_message, thread_id)
 
-    user_message = st.text_input("")
+    # 会話履歴を表示
+    messages = agent.get_messages(thread_id)
+    show_messages(messages)
 
-    if not user_message:
-        # return
-        st.stop()
-
-    st.write(f"User Input: {user_message}")
-
-
-    # Input
-    # initial_input = {"messages": [{"role": "user", "content": "hi!"}]}
-    initial_input = {"messages": [{"role": "user", "content": user_message}]}
-
-    # Thread
-    thread = {"configurable": {"thread_id": thread_id}}
-
-    # Run the graph until the first interruption
-    run_agent(graph, initial_input, thread)
-
-    # st.write("Pending Executions!")
-    next_node = graph.get_state(thread).next
-    if len(next_node) == 0 or next_node[0] != "human_review_node":
-        st.write("END")
-        st.stop()
-    # st.write(graph.get_state(thread).next)
-    # if next_node != "human_review_node":
-    #     st.stop()
-
-    # 承認ボタンを設置
-    approved = st.button("Approve")
-
-    if not approved:
-        st.stop()
-
-    run_agent(graph, None, thread)
+    # 次がhuman_review_nodeの場合は承認ボタンを表示
+    if agent.is_next_human_review_node(thread_id):
+        approved = st.button("承認")
+        # 承認されたらエージェントを実行
+        if approved:
+            with st.spinner():
+                agent.handle_approve(thread_id)
+            # 会話履歴を表示するためrerun
+            st.rerun()
 
 
 app()
