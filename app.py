@@ -92,10 +92,14 @@ def create_graph():
 def run_agent(graph, graph_input, thread):
     for event in graph.stream(graph_input, thread, stream_mode="values"):
         last_message = event["messages"][-1]
+
         if isinstance(last_message, AIMessage):
-            st.write("AI Response!")
-            st.write(last_message)
-        # st.write(event)
+            if len(last_message.tool_calls) > 0:
+                st.write("Agentがtool_callを希望しています")
+                st.write(last_message)
+            else:
+                st.write("AI Response!")
+                st.write(last_message.content)
 
 
 def app():
@@ -130,10 +134,13 @@ def app():
     run_agent(graph, initial_input, thread)
 
     # st.write("Pending Executions!")
-    next_node = graph.get_state(thread).next[0]
-    st.write(graph.get_state(thread).next)
-    if next_node != "human_review_node":
+    next_node = graph.get_state(thread).next
+    if len(next_node) == 0 or next_node[0] != "human_review_node":
+        st.write("END")
         st.stop()
+    # st.write(graph.get_state(thread).next)
+    # if next_node != "human_review_node":
+    #     st.stop()
 
     # 承認ボタンを設置
     approved = st.button("Approve")
