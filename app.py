@@ -1,3 +1,4 @@
+from pdb import run
 import uu
 import streamlit as st
 from uuid import uuid4
@@ -88,6 +89,13 @@ def create_graph():
     # View
     # display(Image(graph.get_graph().draw_mermaid_png()))
 
+def run_agent(graph, graph_input, thread):
+    for event in graph.stream(graph_input, thread, stream_mode="values"):
+        last_message = event["messages"][-1]
+        if isinstance(last_message, AIMessage):
+            st.write("AI Response!")
+            st.write(last_message)
+        # st.write(event)
 
 
 def app():
@@ -119,17 +127,11 @@ def app():
     thread = {"configurable": {"thread_id": thread_id}}
 
     # Run the graph until the first interruption
-    for event in graph.stream(initial_input, thread, stream_mode="values"):
-        last_message = event["messages"][-1]
-        if isinstance(last_message, AIMessage):
-            st.write("AI Response!")
-            st.write(last_message)
-        # st.write(event)
+    run_agent(graph, initial_input, thread)
 
     # st.write("Pending Executions!")
     next_node = graph.get_state(thread).next[0]
     st.write(graph.get_state(thread).next)
-
     if next_node != "human_review_node":
         st.stop()
 
@@ -139,21 +141,7 @@ def app():
     if not approved:
         st.stop()
 
-    for event in graph.stream(None, thread, stream_mode="values"):
-        # st.write(event) 
-        last_message = event["messages"][-1]
-        if isinstance(last_message, AIMessage):
-            st.write("AI Response!")
-            st.write(last_message)
-
-    # user_input = input("Human Review: ")
-    # if user_input == "yes":
-    #     print("approved")
-    #     for event in graph.stream(None, thread, stream_mode="values"):
-    #         print(event)
-    # else:
-    #     print("rejected")
-
+    run_agent(graph, None, thread)
 
 
 app()
