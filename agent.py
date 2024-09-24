@@ -10,9 +10,14 @@ from langgraph.pregel.types import StateSnapshot
 
 
 @tool
-def weather_search(city: str) -> str:
-    """Search for the weather"""
-    return "Sunny!"
+def amortization_calculation(principal: int, annual_interest_rate: float, num_payments: int) -> int:
+    """Amortization calculation tool."""
+    # 月利率の計算
+    monthly_interest_rate = annual_interest_rate / 1200
+    # 毎月の返済額を計算する式
+    monthly_payment = principal * (monthly_interest_rate * (1 + monthly_interest_rate) ** num_payments) / ((1 + monthly_interest_rate) ** num_payments - 1)
+    # 計算結果を切り捨てて整数に変換
+    return int(monthly_payment)
 
 
 class HumanInTheLoopAgentState(MessagesState):
@@ -38,7 +43,7 @@ class HumanInTheLoopAgent:
         )
 
     def _call_llm(self, state: dict) -> dict:
-        model = ChatOpenAI(model="gpt-4o-mini").bind_tools([weather_search])
+        model = ChatOpenAI(model="gpt-4o-mini").bind_tools([amortization_calculation])
         return {"messages": [model.invoke(state["messages"])]}
 
     def _human_review_node(self, state: dict) -> None:
@@ -46,7 +51,7 @@ class HumanInTheLoopAgent:
 
     def _run_tool(self, state: dict) -> dict:
         new_messages = []
-        tools = {"weather_search": weather_search}
+        tools = {"amortization_calculation": amortization_calculation}
         tool_calls = state["messages"][-1].tool_calls
         for tool_call in tool_calls:
             tool = tools[tool_call["name"]]
@@ -106,8 +111,9 @@ class HumanInTheLoopAgent:
         ):
             pass
 
-    def get_messages(self, thread_id: str) -> Any:
-        return self._get_state(thread_id).values["messages"]  # noqa: PD011
+    def get_messages(self, thread_id):
+        state = self._get_state(thread_id)
+        return state.values.get("messages", [])  # "messages"キーが見つからない場合は空のリストを返す
 
     def is_next_human_review_node(self, thread_id: str) -> bool:
         graph_next = self._get_state(thread_id).next
