@@ -11,7 +11,16 @@ from langgraph.pregel.types import StateSnapshot
 
 @tool
 def amortization_calculation(principal: int, annual_interest_rate: float, num_payments: int) -> int:
-    """Amortization calculation tool."""
+    """住宅ローンの毎月の返済額を計算するツール
+
+    Args:
+        principal (int): 借入金額（元金）
+        annual_interest_rate (float): 年間利率（%）
+        num_payments (int): 返済回数（月数）
+
+    Returns:
+        int: 毎月の返済額（円）、小数点以下切り捨て
+    """
     # 月利率の計算
     monthly_interest_rate = annual_interest_rate / 1200
     # 毎月の返済額を計算する式
@@ -21,10 +30,21 @@ def amortization_calculation(principal: int, annual_interest_rate: float, num_pa
 
 
 class HumanInTheLoopAgentState(MessagesState):
-    """Simple state."""
+    """エージェントの状態を管理するクラス
+
+    MessagesStateを継承し、メッセージの履歴を保持する。
+    """
 
 
 class HumanInTheLoopAgent:
+    """Human-in-the-loopエージェントの実装
+
+    このエージェントは以下の機能を提供する：
+    - LLMによる応答生成
+    - ツールの実行
+    - 人間によるレビューと承認
+    - 状態管理とチェックポイント
+    """
     def __init__(self) -> None:
         builder = StateGraph(HumanInTheLoopAgentState)
         builder.add_node("call_llm", self._call_llm)
@@ -43,13 +63,36 @@ class HumanInTheLoopAgent:
         )
 
     def _call_llm(self, state: dict) -> dict:
+        """LLMを呼び出してメッセージを生成する
+
+        Args:
+            state (dict): 現在の状態
+
+        Returns:
+            dict: 生成されたメッセージを含む新しい状態
+        """
         model = ChatOpenAI(model="gpt-4o-mini").bind_tools([amortization_calculation])
         return {"messages": [model.invoke(state["messages"])]}
 
     def _human_review_node(self, state: dict) -> None:
+        """人間によるレビューノード
+
+        ツールの実行前に人間の承認を待機する。
+
+        Args:
+            state (dict): 現在の状態
+        """
         pass
 
     def _run_tool(self, state: dict) -> dict:
+        """承認されたツールを実行する
+
+        Args:
+            state (dict): 現在の状態（実行するツールの情報を含む）
+
+        Returns:
+            dict: ツールの実行結果を含む新しい状態
+        """
         new_messages = []
         tools = {"amortization_calculation": amortization_calculation}
         tool_calls = state["messages"][-1].tool_calls
@@ -67,18 +110,44 @@ class HumanInTheLoopAgent:
         return {"messages": new_messages}
 
     def _route_after_llm(self, state: dict) -> Literal[END, "human_review_node"]:
+        """LLM実行後の遷移先を決定する
+
+        Args:
+            state (dict): 現在の状態
+
+        Returns:
+            Literal[END, "human_review_node"]: 
+                - ツールの呼び出しがある場合はhuman_review_node
+                - ない場合はEND
+        """
         if len(state["messages"][-1].tool_calls) == 0:
             return END
         else:
             return "human_review_node"
 
     def _route_after_human(self, state: dict) -> Literal["run_tool", "call_llm"]:
+        """人間のレビュー後の遷移先を決定する
+
+        Args:
+            state (dict): 現在の状態
+
+        Returns:
+            Literal["run_tool", "call_llm"]: 
+                - AIMessageの場合はrun_tool
+                - それ以外の場合はcall_llm
+        """
         if isinstance(state["messages"][-1], AIMessage):
             return "run_tool"
         else:
             return "call_llm"
 
     def handle_human_message(self, human_message: str, thread_id: str) -> None:
+        """ユーザーからのメッセージを処理する
+
+        Args:
+            human_message (str): ユーザーからのメッセージ
+            thread_id (str): 会話を識別するためのID
+        """
         # 承認待ちの状態でhuman_messageが送信されるのは、ツールの呼び出しを修正したい状況
         # そのため、次がhuman_review_nodeの場合、ツールの呼び出しが失敗したことをStateに追加
         # 参考: https://langchain-ai.github.io/langgraph/how-tos/human_in_the_loop/review-tool-calls/#give-feedback-to-a-tool-call
@@ -104,6 +173,11 @@ class HumanInTheLoopAgent:
             pass
 
     def handle_approve(self, thread_id: str) -> None:
+        """ツールの実行を承認する
+
+        Args:
+            thread_id (str): 会話を識別するためのID
+        """
         for _ in self.graph.stream(
             input=None,
             config=self._config(thread_id),
@@ -112,10 +186,26 @@ class HumanInTheLoopAgent:
             pass
 
     def get_messages(self, thread_id):
+        """会話履歴を取得する
+
+        Args:
+            thread_id: 会話を識別するためのID
+
+        Returns:
+            list: メッセージのリスト。存在しない場合は空リストを返す
+        """
         state = self._get_state(thread_id)
         return state.values.get("messages", [])  # "messages"キーが見つからない場合は空のリストを返す
 
     def is_next_human_review_node(self, thread_id: str) -> bool:
+        """次のノードが人間によるレビューノードかどうかを判定する
+
+        Args:
+            thread_id (str): 会話を識別するためのID
+
+        Returns:
+            bool: 次のノードがhuman_review_nodeの場合はTrue
+        """
         graph_next = self._get_state(thread_id).next
         return len(graph_next) != 0 and graph_next[0] == "human_review_node"
 
@@ -126,4 +216,9 @@ class HumanInTheLoopAgent:
         return {"configurable": {"thread_id": thread_id}}
 
     def mermaid_png(self) -> bytes:
+        """グラフをMermaid形式のPNG画像として取得する
+
+        Returns:
+            bytes: PNG画像のバイトデータ
+        """
         return self.graph.get_graph().draw_mermaid_png()

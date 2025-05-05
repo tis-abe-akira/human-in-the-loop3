@@ -9,6 +9,14 @@ from agent import HumanInTheLoopAgent
 
 
 def show_messages(messages: list[Any]) -> None:
+    """メッセージリストをStreamlit上に表示する
+
+    Args:
+        messages (list[Any]): 表示するメッセージのリスト。HumanMessage、AIMessage、ToolMessageのいずれかのインスタンス。
+
+    Raises:
+        ValueError: 未知のメッセージタイプが含まれている場合に発生
+    """
     for message in messages:
         if isinstance(message, HumanMessage):
             with st.chat_message(message.type):
@@ -36,6 +44,18 @@ def show_messages(messages: list[Any]) -> None:
 
 
 def app() -> None:
+    """Streamlitアプリケーションのメインエントリーポイント
+
+    環境変数を読み込み、Human-in-the-loopエージェントを初期化し、
+    ユーザーとエージェントの対話インターフェースを提供する。
+    
+    機能:
+    - エージェントの状態管理
+    - グラフの可視化
+    - メッセージ履歴の表示
+    - ユーザー入力の処理
+    - ツール実行の承認機能
+    """
     load_dotenv(override=True)
 
     st.title("LangGraphでのHuman-in-the-loopの実装")
