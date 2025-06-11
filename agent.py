@@ -7,6 +7,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.pregel.types import StateSnapshot
+from langgraph.types import Command
 
 
 @tool
@@ -179,7 +180,7 @@ class HumanInTheLoopAgent:
             thread_id (str): 会話を識別するためのID
         """
         for _ in self.graph.stream(
-            input=None,
+            Command(resume="approve"),
             config=self._config(thread_id),
             stream_mode="values",
         ):
